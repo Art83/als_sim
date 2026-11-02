@@ -799,9 +799,7 @@ cat("=================================================\n\n")
 source("R/functions.R")   # loads the parameters saved above
 set.seed(2025)
 
-dropout_cal <- calibrate_monotone_dropout(
-  target_mean = sim_params$mean_visits_subset,
-  target_r = sim_params$dropout_r_slope_visits_subset)
+dropout_cal <- calibrate_dropout(target_r = sim_params$dropout_r_slope_visits_subset)
 sim_params$dropout_par <- dropout_cal
 
 recall_cal <- calibrate_recall_cv(target_r = sim_params$dfs_r_slope_subset,

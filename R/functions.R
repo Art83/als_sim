@@ -115,7 +115,7 @@ generate_data <- function(N, n_proteins, n_true_hits, beta_values,
   } else if (dropout) {
     if (is.null(dropout_par))
       stop("No calibrated dropout in sim_params.")
-    visit_times <- monotone_schedule(b1_als, dropout_par)
+    visit_times <- informative_visits(b1_als, dropout_par$rho)
   } else {
     visit_times <- generate_visits(N)
   }
@@ -572,51 +572,41 @@ par_apply <- function(X, FUN, export = character(0), envir = parent.frame(),
 }
 
 
-monotone_schedule <- function(b1, par, max_visits = max(visit_count_vals)) {
+informative_visits <- function(b1, rho) {
+  n <- length(b1)
+  nv <- sort(sample(visit_count_vals, n, replace = TRUE, prob = visit_count_probs))
+  u <- rho * as.numeric(scale(b1)) + sqrt(1 - rho^2) * rnorm(n)
+  nv_i <- nv[rank(u, ties.method = "first")]
   shape <- (visit_gap_mean / visit_gap_sd)^2
   rate  <- visit_gap_mean / visit_gap_sd^2
-  z <- -as.numeric(scale(b1))
-  h <- plogis(par$base + par$k * z)
-  lapply(seq_along(b1), function(i) {
-    gaps <- pmax(rgamma(max_visits - 1, shape = shape, rate = rate), 0.08)
-    t <- c(0, cumsum(gaps))
-    n <- 2
-    while (n < max_visits && runif(1) > h[i]) n <- n + 1
-    t[seq_len(n)]
+  lapply(nv_i, function(k) {
+    if (k == 1) return(0)
+    sort(c(0, cumsum(pmax(rgamma(k - 1, shape = shape, rate = rate), 0.08))))
   })
 }
 
-calibrate_monotone_dropout <- function(target_mean, target_r, n = N, reps = 5,
-                                       base_grid = seq(-4, 0, by = 0.2),
-                                       k_grid = seq(0, 2, by = 0.1)) {
+calibrate_dropout <- function(target_r, n = N, reps = 100, rho_grid = seq(0, 0.9, by = 0.01)) {
   Sigma_als <- matrix(c(alsfrs_intercept_sd^2,
                         alsfrs_rho * alsfrs_intercept_sd * alsfrs_slope_sd,
                         alsfrs_rho * alsfrs_intercept_sd * alsfrs_slope_sd,
                         alsfrs_slope_sd^2), 2, 2)
-  one <- function(base, k) {
+  one <- function(rho) {
     re <- MASS::mvrnorm(n, mu = c(0, 0), Sigma = Sigma_als)
     b0 <- alsfrs_intercept_mean + re[, 1]
-    b1 <- alsfrs_slope_mean     + re[, 2]
-    vt <- monotone_schedule(b1, list(base = base, k = k))
-    nv <- lengths(vt)
+    b1 <- alsfrs_slope_mean + re[, 2]
+    vt <- informative_visits(b1, rho)
     sl <- vapply(seq_len(n), function(i) {
       t <- vt[[i]]
       y <- pmin(pmax(b0[i] + b1[i] * t + rnorm(length(t), 0, alsfrs_residual_sd), 0), 48)
       cov(y, t) / var(t)
     }, numeric(1))
-    c(mean_visits = mean(nv), r = suppressWarnings(cor(sl, nv)))
+    cor(sl, lengths(vt))
   }
-  grid <- expand.grid(base = base_grid, k = k_grid)
-  res <- t(vapply(seq_len(nrow(grid)), function(g)
-    rowMeans(replicate(reps, one(grid$base[g], grid$k[g]))), numeric(2)))
-  grid$mean_visits <- res[, 1]; grid$r <- res[, 2]
-  grid$dist <- ((grid$mean_visits - target_mean) / target_mean)^2 +
-               ((grid$r - target_r) / max(abs(target_r), 0.05))^2
-  best <- grid[which.min(grid$dist), ]
-  cat(sprintf("  Monotone dropout calibration: base = %.2f, k = %.2f | mean visits %.2f (target %.2f) | r(OLS slope, visits) %.3f (target %.3f)\n",
-              best$base, best$k, best$mean_visits, target_mean, best$r, target_r))
-  list(base = best$base, k = best$k, achieved_mean = best$mean_visits,
-       achieved_r = best$r, target_mean = target_mean, target_r = target_r)
+  r <- vapply(rho_grid, function(rho) mean(replicate(reps, one(rho))), numeric(1))
+  best <- which.min(abs(r - target_r))
+  cat(sprintf("  Dropout calibration: rho = %.2f | r(OLS slope, visits) %.3f (target %.3f)\n",
+              rho_grid[best], r[best], target_r))
+  list(rho = rho_grid[best], achieved_r = r[best], target_r = target_r)
 }
 
 
@@ -642,7 +632,7 @@ calibrate_recall_cv <- function(target_r, n = N, reps = 20,
     re <- MASS::mvrnorm(n, mu = c(0, 0), Sigma = Sigma_als)
     b0 <- alsfrs_intercept_mean + re[, 1]
     b1 <- alsfrs_slope_mean     + re[, 2]
-    vt <- if (!is.null(dropout_par)) monotone_schedule(b1, dropout_par) else generate_visits(n)
+    vt <- if (!is.null(dropout_par)) informative_visits(b1, dropout_par$rho) else generate_visits(n)
     y_first <- numeric(n); sl <- numeric(n)
     for (i in seq_len(n)) {
       t <- vt[[i]]

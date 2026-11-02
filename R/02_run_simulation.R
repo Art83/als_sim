@@ -6,6 +6,7 @@
 ################################################################################
 
 source("R/functions.R")
+source("R/design_check.R"); design_check()
 
 RNGkind("L'Ecuyer-CMRG")
 set.seed(2025)
@@ -245,7 +246,7 @@ cat("=============================================================\n\n")
 
 run_iso_sim <- function(sim_id, informative, nv, censor, dec) {
   suppressPackageStartupMessages({library(lme4); library(lmerTest); library(dplyr)})
-  dpar <- if (informative) sim_dropout_par else modifyList(sim_dropout_par, list(k = 0))
+  dpar <- if (informative) sim_dropout_par else list(rho = 0)
   dat <- suppressWarnings(
     generate_data(N, n_proteins, n_true_hits, beta_true_values,
                   dropout = TRUE, visit_override = nv, censor = censor,

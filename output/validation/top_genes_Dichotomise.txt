@@ -1,0 +1,19 @@
+PSMP
+BNIP3
+SCAR5
+GIP
+IGFBP-1
+LSHB
+SSX4
+BRK1
+NPTN
+Aldose reductase-like C3
+Fc_MOUSE
+sLeptin R
+SETD2
+IRF4
+ARFG1
+Activin AC
+NUDT7
+KKLC1
+ITA11

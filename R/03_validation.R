@@ -109,6 +109,8 @@ prot_long <- prot_with_time %>%
   mutate(y = log2(as.numeric(y))) %>%
   filter(is.finite(y))
 
+saveRDS(prot_long, paste0(here(), "/output/validation/prot_long.rds"))
+
 prot_slopes_ols <- prot_long %>%
   group_by(SeqId, GUID) %>% filter(n() >= 2) %>%
   summarise(prot_slope = cov(y, time_years) / var(time_years), .groups = "drop") %>%
